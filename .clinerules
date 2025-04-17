@@ -1,0 +1,33 @@
+# わいわいチャットらんど 開発ルール
+
+## Long Steps (プロジェクトリーダー目線)
+
+1.  **[進行中]** プロジェクト初期設定: Next.js環境構築、タスク管理ファイル作成
+2.  基本チャットUI実装: メッセージ表示エリア、入力フォーム
+3.  WebSocket接続確立: サーバーサイド・クライアントサイド実装
+4.  メッセージ送受信機能実装 (1:1チャット)
+5.  AI応答機能実装 (モック)
+6.  N:1チャット機能実装
+7.  ユーザー管理機能の検討・設計
+8.  画像添付機能の検討・設計
+9.  テストコード拡充
+10. デプロイ準備
+
+## Short Steps (具体的タスク)
+
+*   **[完了]** `.clinerules` ファイル作成
+*   **[TODO]** `docs/tasks.md` ファイル作成
+*   **[完了]** Next.js プロジェクト作成 (`create-next-app` in `app` dir)
+*   **[完了]** 基本的なディレクトリ構造設定 (`src` ディレクトリなど) - by `create-next-app`
+*   **[完了]** `.env.local` ファイル作成と初期設定
+*   **[完了]** WebSocketサーバーの技術選定 (Node.js標準 `ws` ライブラリを採用)
+*   **[完了]** チャット画面のコンポーネント設計 (`components/ChatWindow.tsx` など)
+
+## Insights (開発のヒント・反省点)
+
+*   Next.jsのApp Routerを採用する。
+*   UIコンポーネントにはTailwind CSSまたはChakra UIなどを検討する。
+*   WebSocketライブラリは `ws` または `socket.io` が候補。プロトタイプではシンプルな `ws` から始めるのが良さそう。
+*   状態管理ライブラリ（Zustand, Jotaiなど）の導入も視野に入れるが、初期はReact標準の `useState`, `useContext` で進める。
+*   テストは `jest` と `React Testing Library` を基本とする。
+*   AI応答部分は初期段階では固定のレスポンスを返すモックで実装する。
