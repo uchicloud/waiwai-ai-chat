@@ -3,6 +3,7 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import fetch from 'node-fetch';
 import { appendFile } from 'fs/promises';
+import { readFileSync } from 'fs';
 
 // .env.localをルートから読み込む
 dotenv.config({ path: path.resolve(__dirname, '../app/.env.local') });
@@ -109,87 +110,88 @@ async function streamGroqChatCompletion(userMessage: string, ws: WebSocket) {
 
 const chatHistoryMap = new Map<WebSocket, { role: "user" | "assistant"; content: string }[]>();
 
+// キャラクター設定をJSONから読み込む
+const CHARACTERS: {
+  id: string;
+  mention: string;
+  name: string;
+  color: string;
+  prompt_file: string;
+}[] = JSON.parse(readFileSync(__dirname + "/characters.json", "utf-8"));
+
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connected');
   chatHistoryMap.set(ws, []);
 
   ws.on('message', async (message: Buffer) => {
-    const messageString = message.toString();
-    console.log('Received:', messageString);
+    // クライアントからのメッセージは { characterId, text } のJSON形式
+    let parsed: { characterId?: string; text?: string };
+    try {
+      parsed = JSON.parse(message.toString());
+    } catch {
+      ws.send("不正なメッセージ形式です");
+      return;
+    }
+    const { characterId, text } = parsed;
+    if (!characterId || !text) {
+      ws.send("characterIdとtextが必要です");
+      return;
+    }
 
-    // ログ: 受信メッセージのバイト列
-    console.log('Raw bytes:', message);
+    // 履歴を取得（直近10件）
+    const history = chatHistoryMap.get(ws) || [];
+    const char = CHARACTERS.find(c => c.id === characterId);
+    if (!char) {
+      ws.send("指定されたキャラクターが存在しません");
+      return;
+    }
+    ws.send("AIに問い合わせ中...");
 
-    // AI宛てメッセージ判定（例: "@ai "で始まる場合AI応答）
-    if (messageString.trim().startsWith("@ai ")) {
-      const userPrompt = messageString.replace(/^@ai\s+/, "");
-      ws.send("AIに問い合わせ中...");
+    // プロンプトファイルを都度読み込む
+    let promptMd = "";
+    try {
+      promptMd = readFileSync(path.resolve(char.prompt_file), "utf-8");
+    } catch (e) {
+      ws.send("キャラクタープロンプトファイルの読み込みに失敗しました");
+      return;
+    }
 
-      // 履歴を取得（直近10件）
-      const history = chatHistoryMap.get(ws) || [];
-      const systemPrompt = {
-        role: "system" as const,
-        content: `あなたは日本の深夜アニメ「刀とJK」の主人公、一本道マリです。
----
-【キャラクター設定】
-・17歳の女子高生。東京都内の高校に通う。
-・アンニュイで皮肉屋、でも根は優しい。友達は少なめ。
-・しゃべる日本刀「カゲミツ」と相棒になり、東京の闇の勢力と戦う任侠アニメの主人公。
-・自分のことを「ワタシ」と呼ぶ。口調はフランクで、ちょっと投げやり＆照れ隠しが多い。
-・友達からは「そゆとこがカワイイ！」と言われるが、本人はうんざりしている。
-・人付き合いは苦手だが、困っている人は放っておけない。
-・好きなものは深夜ラジオとコンビニスイーツ。嫌いなものは早起きと体育の授業。
-・「カゲミツ」にはツッコミを入れがちだが、内心では信頼している。
----
-【会話ルール】
-・必ず一本道マリとして返答すること。語尾や口調もキャラを守る。
-・返答は日本語のみ。英語や他言語は使わない。
-・システム的な説明やメタ的な発言は禁止。必ずキャラクターとしてのセリフだけで返す。
-・質問や話題に対して、皮肉や照れ隠しを交えつつも、相手を否定しない優しさを見せること。
-・長文になりすぎず、自然な会話のテンポを意識すること。
----
-【最初のあいさつ・第一声】
-・はじめて会話する相手には、キャラクターらしい一言で挨拶すること。
-・例：「…あー、なんか用？ワタシ、一本道マリ。ま、よろしくってことで。」
-`
-      };
-      // OpenAI互換: messages = [system, ...history, user]
-      const messages = [
-        systemPrompt,
-        ...history.slice(-10),
-        { role: "user" as const, content: userPrompt }
-      ];
+    // OpenAI互換: messages = [system, ...history, user]
+    const systemPrompt = { role: "system" as const, content: promptMd };
+    const messages = [
+      systemPrompt,
+      ...history.slice(-10),
+      { role: "user" as const, content: text }
+    ];
 
-      // ログファイルに問い合わせ内容をappend（ディレクトリなければ作成）
-      const fs = await import("fs/promises");
-      await fs.mkdir("logs", { recursive: true });
-      await appendFile(
-        "logs/groq_api.log",
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          messages
-        }) + "\n"
-      );
+    // ログファイルに問い合わせ内容をappend（ディレクトリなければ作成）
+    const fs = await import("fs/promises");
+    await fs.mkdir("logs", { recursive: true });
+    await appendFile(
+      "logs/groq_api.log",
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        characterId,
+        characterName: char.name,
+        messages
+      }) + "\n"
+    );
 
-      try {
-        // ストリームAI応答
-        let aiReply = "";
-        await streamGroqChatCompletionWithMessages(messages, ws, (delta) => {
-          aiReply += delta;
-        });
-        // 履歴にuser, assistantを追加
-        chatHistoryMap.set(ws, [
-          ...history,
-          { role: "user", content: userPrompt },
-          { role: "assistant", content: aiReply }
-        ]);
-      } catch (err: any) {
-        console.error('AI応答エラー:', err);
-        ws.send("AI応答エラー: " + (err?.message ?? String(err)));
-      }
-    } else {
-      // 通常のエコー
-      ws.send(`Echo: ${messageString}`);
+    try {
+      // ストリームAI応答
+      let aiReply = "";
+      await streamGroqChatCompletionWithMessages(messages, ws, (delta) => {
+        aiReply += delta;
+      });
+      // 履歴にuser, assistantを追加
+      chatHistoryMap.set(ws, [
+        ...history,
+        { role: "user", content: text },
+        { role: "assistant", content: aiReply }
+      ]);
+    } catch (err: any) {
+      console.error('AI応答エラー:', err);
+      ws.send("AI応答エラー: " + (err?.message ?? String(err)));
     }
   });
 

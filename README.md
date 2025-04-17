@@ -74,9 +74,24 @@ waiwai-chat/
 
 ---
 
+## テスト
+
+Jest + Testing Library によるユニットテスト・UIテストをサポートしています。
+
+```sh
+cd app
+pnpm exec jest --coverage
+```
+
+- カバレッジレポートが表示されます
+- テストファイル例: `app/src/components/ChatWindow.test.tsx`
+- characters.jsonのバリデーションも自動で検証
+
+---
+
 ## 開発ヒント
 
-- キャラクター追加・編集は `app/src/characters.ts` で一元管理
+- キャラクター追加・編集は `server/characters.json` + `server/prompts/*.md` で一元管理
 - .env.localやlogs/はgit履歴に残らない設計
 - テスト・デプロイ・AIキャラ拡張も柔軟に対応可能
 

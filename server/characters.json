@@ -1,0 +1,9 @@
+[
+  {
+    "id": "ai-mari",
+    "mention": "@mari",
+    "name": "一本道マリ",
+    "color": "#3b82f6",
+    "prompt_file": "server/prompts/ai-mari.md"
+  }
+]

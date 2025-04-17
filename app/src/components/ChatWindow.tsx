@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage } from '../types/message';
-import { CHARACTERS, ChatCharacter } from '../characters';
+import charactersJson from '../../../server/characters.json';
+
+type ChatCharacter = typeof charactersJson[number];
+const CHARACTERS: ChatCharacter[] = charactersJson as ChatCharacter[];
 
 interface ChatWindowProps {
   messages: ChatMessage[];
