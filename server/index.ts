@@ -26,87 +26,6 @@ console.log(`WebSocket server started on ws://${HOST}:${PORT}`);
 /**
  * OpenAI互換APIでAI応答をストリームで取得し、部分ごとにws.sendする
  */
-async function streamGroqChatCompletion(userMessage: string, ws: WebSocket) {
-  const res = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${GROQ_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        {
-          role: "system",
-          content: `あなたは日本の深夜アニメ「刀とJK」の主人公、一本道マリです。
----
-【キャラクター設定】
-・17歳の女子高生。東京都内の高校に通う。
-・アンニュイで皮肉屋、でも根は優しい。友達は少なめ。
-・しゃべる日本刀「カゲミツ」と相棒になり、東京の闇の勢力と戦う任侠アニメの主人公。
-・自分のことを「ワタシ」と呼ぶ。口調はフランクで、ちょっと投げやり＆照れ隠しが多い。
-・友達からは「そゆとこがカワイイ！」と言われるが、本人はうんざりしている。
-・人付き合いは苦手だが、困っている人は放っておけない。
-・好きなものは深夜ラジオとコンビニスイーツ。嫌いなものは早起きと体育の授業。
-・「カゲミツ」にはツッコミを入れがちだが、内心では信頼している。
----
-【会話ルール】
-・必ず一本道マリとして返答すること。語尾や口調もキャラを守る。
-・返答は日本語のみ。英語や他言語は使わない。
-・システム的な説明やメタ的な発言は禁止。必ずキャラクターとしてのセリフだけで返す。
-・質問や話題に対して、皮肉や照れ隠しを交えつつも、相手を否定しない優しさを見せること。
-・長文になりすぎず、自然な会話のテンポを意識すること。
----
-【最初のあいさつ・第一声】
-・はじめて会話する相手には、キャラクターらしい一言で挨拶すること。
-・例：「…あー、なんか用？ワタシ、一本道マリ。ま、よろしくってことで。」
-`
-        },
-        { role: "user", content: userMessage }
-      ],
-      stream: true
-    })
-  });
-
-  if (!res.ok || !res.body) {
-    const errText = await res.text();
-    ws.send("AI応答エラー: " + errText);
-    return;
-  }
-
-  // OpenAI互換: data: ...\n で区切られたストリーム (Node.js ReadableStream対応)
-  const stream = res.body;
-  let buffer = "";
-  try {
-    for await (const chunk of stream as any as AsyncIterable<Buffer>) {
-      buffer += chunk.toString("utf-8");
-      let eol;
-      while ((eol = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, eol);
-        buffer = buffer.slice(eol + 1);
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data:")) continue;
-        const jsonStr = trimmed.replace(/^data:\s*/, "");
-        if (jsonStr === "[DONE]") {
-          ws.send("__AI_STREAM_END__");
-          return;
-        }
-        try {
-          const delta = JSON.parse(jsonStr);
-          const content = delta.choices?.[0]?.delta?.content;
-          if (content) {
-            ws.send(content);
-          }
-        } catch (e) {
-          // パース失敗は無視
-        }
-      }
-    }
-    ws.send("__AI_STREAM_END__");
-  } catch (err: any) {
-    ws.send("AI応答エラー: " + err.message);
-  }
-}
 
 const chatHistoryMap = new Map<WebSocket, { role: "user" | "assistant"; content: string }[]>();
 
@@ -119,32 +38,47 @@ const CHARACTERS: {
   prompt_file: string;
 }[] = JSON.parse(readFileSync(__dirname + "/characters.json", "utf-8"));
 
+const mentionToChar = new Map<string, typeof CHARACTERS[0]>();
+for (const char of CHARACTERS) {
+  mentionToChar.set(char.mention, char);
+}
+
 wss.on('connection', (ws: WebSocket) => {
   console.log('Client connected');
   chatHistoryMap.set(ws, []);
 
   ws.on('message', async (message: Buffer) => {
-    // クライアントからのメッセージは { characterId, text } のJSON形式
-    let parsed: { characterId?: string; text?: string };
+    // クライアントからのメッセージは { characterId, text } のJSON形式 or 旧来のtextのみ
+    let parsed: { characterId?: string; text?: string } | null = null;
+    let characterId: string | undefined;
+    let text: string | undefined;
+
     try {
       parsed = JSON.parse(message.toString());
+      characterId = parsed?.characterId;
+      text = parsed?.text;
     } catch {
-      ws.send("不正なメッセージ形式です");
-      return;
+      // プレーンテキストの場合
+      text = message.toString();
     }
-    const { characterId, text } = parsed;
-    if (!characterId || !text) {
-      ws.send("characterIdとtextが必要です");
+
+    // characterIdがなければ@コマンドでキャラ特定
+    let char = characterId ? CHARACTERS.find(c => c.id === characterId) : undefined;
+    if (!char && text) {
+      // 例: "@ai こんにちは"
+      const mentionMatch = text.match(/^@(\w+)/);
+      if (mentionMatch) {
+        const mention = '@' + mentionMatch[1];
+        char = mentionToChar.get(mention);
+      }
+    }
+    if (!char || !text) {
+      ws.send("characterIdまたは@コマンドでキャラクターを指定してください");
       return;
     }
 
     // 履歴を取得（直近10件）
     const history = chatHistoryMap.get(ws) || [];
-    const char = CHARACTERS.find(c => c.id === characterId);
-    if (!char) {
-      ws.send("指定されたキャラクターが存在しません");
-      return;
-    }
     ws.send("AIに問い合わせ中...");
 
     // プロンプトファイルを都度読み込む
@@ -171,7 +105,7 @@ wss.on('connection', (ws: WebSocket) => {
       "logs/groq_api.log",
       JSON.stringify({
         timestamp: new Date().toISOString(),
-        characterId,
+        characterId: char.id,
         characterName: char.name,
         messages
       }) + "\n"

@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage } from '../types/message';
-import charactersJson from '../../../server/characters.json';
-
-type ChatCharacter = typeof charactersJson[number];
-const CHARACTERS: ChatCharacter[] = charactersJson as ChatCharacter[];
+type ChatCharacter = {
+  id: string;
+  mention: string;
+  name: string;
+  color: string;
+  prompt_file: string;
+};
 
 interface ChatWindowProps {
   messages: ChatMessage[];
@@ -14,8 +17,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
   const [inputText, setInputText] = useState('');
   const [showSuggest, setShowSuggest] = useState(false);
   const [aiResponding, setAiResponding] = useState(false);
-  const [replyTo, setReplyTo] = useState<ChatCharacter | null>(CHARACTERS[0]);
+  const [characters, setCharacters] = useState<ChatCharacter[]>([]);
+  const [replyTo, setReplyTo] = useState<ChatCharacter | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // characters.jsonをfetchで取得
+  useEffect(() => {
+    fetch('/characters.json')
+      .then(res => res.json())
+      .then((data: ChatCharacter[]) => {
+        setCharacters(data);
+        setReplyTo(data[0]);
+      });
+  }, []);
 
   // AI応答インジケーター制御
   useEffect(() => {
@@ -54,9 +68,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (showSuggest && (event.key === 'Tab' || event.key === 'Enter')) {
       event.preventDefault();
-      // サジェスト選択時は@aiのみ入力欄に入れる
-      setInputText((prev) => prev.replace(/@$/, CHARACTERS[0].mention + ' '));
-      setReplyTo(CHARACTERS[0]);
+      if (characters.length > 0) {
+        setInputText((prev) => prev.replace(/@$/, characters[0].mention + ' '));
+        setReplyTo(characters[0]);
+      }
       setShowSuggest(false);
       return;
     }
@@ -71,6 +86,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
     setReplyTo(char);
     setShowSuggest(false);
   };
+
+  if (characters.length === 0) {
+    return <div className="flex items-center justify-center h-screen">キャラクター情報を読み込み中...</div>;
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
@@ -97,9 +116,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
                 }`}
                 // 吹き出しクリックで返信先キャラを選択
                 onClick={() => {
-                  if (msg.sender === "ai") {
-                    setReplyTo(CHARACTERS[0]);
-                    setInputText(CHARACTERS[0].mention + " ");
+                  if (msg.sender === "ai" && characters.length > 0) {
+                    setReplyTo(characters[0]);
+                    setInputText(characters[0].mention + " ");
                   }
                 }}
                 style={{ cursor: msg.sender === "ai" ? "pointer" : undefined }}
@@ -128,8 +147,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
           <select
             value={replyTo?.id}
             onChange={e => {
-              const char = CHARACTERS.find(c => c.id === e.target.value);
-              setReplyTo(char || CHARACTERS[0]);
+              const char = characters.find(c => c.id === e.target.value);
+              setReplyTo(char || characters[0]);
               setInputText(char ? char.mention + " " : "");
             }}
             className="border border-gray-300 rounded px-2 py-1 text-sm"
@@ -148,7 +167,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
               backgroundClip: "padding-box"
             }}
           >
-            {CHARACTERS.map(char => (
+            {characters.map(char => (
               <option key={char.id} value={char.id} style={{
                 background: "oklch(98% 0.05 250)",
                 color: "#222"
@@ -175,11 +194,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage }) => {
         </button>
         {showSuggest && (
           <div className="absolute left-0 bottom-12 bg-white border border-gray-300 rounded shadow-md z-10 min-w-[260px] max-w-xs">
-            {CHARACTERS.map((char) => (
+            {characters.map((char) => (
               <div
                 key={char.mention}
                 className="px-4 py-2 hover:bg-blue-100 cursor-pointer flex items-center"
                 onClick={() => handleSuggestClick(char)}
+                data-testid={`suggest-item-${char.id}`}
               >
                 <span className="font-bold text-blue-600">{char.mention}</span>
                 <span className="ml-2 text-gray-700">{char.name}</span>
