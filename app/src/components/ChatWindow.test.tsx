@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import ChatWindow from './ChatWindow';
-import charactersJson from '../../../server/characters.json';
+import charactersJson from '../../characters.json';
 
 beforeEach(() => {
   // fetchをモック

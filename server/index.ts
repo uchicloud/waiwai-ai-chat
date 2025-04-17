@@ -36,7 +36,7 @@ const CHARACTERS: {
   name: string;
   color: string;
   prompt_file: string;
-}[] = JSON.parse(readFileSync(__dirname + "/characters.json", "utf-8"));
+}[] = JSON.parse(readFileSync("./characters.json", "utf-8"));
 
 const mentionToChar = new Map<string, typeof CHARACTERS[0]>();
 for (const char of CHARACTERS) {
@@ -84,8 +84,9 @@ wss.on('connection', (ws: WebSocket) => {
     // プロンプトファイルを都度読み込む
     let promptMd = "";
     try {
-      promptMd = readFileSync(path.resolve(char.prompt_file), "utf-8");
+      promptMd = readFileSync(path.join(__dirname, char.prompt_file), "utf-8");
     } catch (e) {
+      console.error("プロンプトファイル読み込みエラー:", e);
       ws.send("キャラクタープロンプトファイルの読み込みに失敗しました");
       return;
     }
