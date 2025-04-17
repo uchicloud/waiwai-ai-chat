@@ -1,0 +1,30 @@
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+pnpm-lock.yaml
+
+# Next.js
+.next/
+out/
+dist/
+
+# Env/Secrets
+.env
+.env.*
+!.env.example
+.env.local
+
+# Logs
+logs/
+*.log
+server/logs/
+app/logs/
+
+# System
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
